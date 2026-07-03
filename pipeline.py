@@ -46,6 +46,20 @@ class Clip:
 
 # ---------- 1. Download ----------
 
+def _get_cookiefile():
+    """If a YOUTUBE_COOKIES env var is set (paste of a cookies.txt export),
+    write it to a temp file so yt-dlp can use it to look like a logged-in
+    browser instead of anonymous/bot traffic -- needed on cloud hosts like
+    Render, which YouTube often blocks otherwise."""
+    cookies_content = os.environ.get("YOUTUBE_COOKIES")
+    if not cookies_content:
+        return None
+    cookie_path = os.path.join(DOWNLOAD_DIR, "cookies.txt")
+    with open(cookie_path, "w") as f:
+        f.write(cookies_content)
+    return cookie_path
+
+
 def download_video(url: str, job_id: str):
     out_path = os.path.join(DOWNLOAD_DIR, f"{job_id}.mp4")
     ydl_opts = {
@@ -54,7 +68,15 @@ def download_video(url: str, job_id: str):
         "merge_output_format": "mp4",
         "quiet": True,
         "noplaylist": True,
+        # The "android" client often sidesteps YouTube's "sign in to confirm
+        # you're not a bot" check that hits cloud-hosted IPs, even without
+        # cookies. We combine it with cookies (if provided) for best odds.
+        "extractor_args": {"youtube": {"player_client": ["android", "web"]}},
+        "user_agent": "com.google.android.youtube/19.09.37 (Linux; U; Android 14) gzip",
     }
+    cookiefile = _get_cookiefile()
+    if cookiefile:
+        ydl_opts["cookiefile"] = cookiefile
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
     title = info.get("title", "")

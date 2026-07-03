@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>YT Clipper</title>
+<style>
+  body { font-family: -apple-system, Segoe UI, sans-serif; background:#0f1115; color:#eee; max-width:640px; margin:40px auto; padding:0 16px; }
+  h1 { font-size: 22px; }
+  input, button, select, textarea { font-size: 16px; padding: 10px; border-radius: 8px; border: 1px solid #333; }
+  input[type=text] { width: 100%; box-sizing: border-box; background:#1a1d24; color:#eee; }
+  button { background:#5b6cff; color:white; border:none; cursor:pointer; margin-top:10px; }
+  button:disabled { background:#444; cursor:not-allowed; }
+  .row { display:flex; gap:10px; margin-top:10px; }
+  .row > div { flex:1; }
+  #log { margin-top:20px; font-family: monospace; font-size:13px; color:#9aa; white-space:pre-wrap; }
+  .clip { background:#1a1d24; padding:14px; border-radius:10px; margin-top:14px; display:flex; gap:14px; }
+  .clip img { width:100px; border-radius:8px; flex-shrink:0; }
+  .clip .info { flex:1; min-width:0; }
+  .clip a.dl { color:#8ecbff; display:inline-block; margin-top:6px; }
+  .clip textarea.caption { width:100%; margin-top:8px; background:#0f1115; color:#ddd; border:1px solid #333; border-radius:6px; padding:8px; font-size:13px; box-sizing:border-box; }
+  .copyBtn { background:#333; padding:4px 10px; font-size:12px; margin-top:4px; }
+</style>
+</head>
+<body>
+  <h1>🎬 YouTube Highlight Clipper</h1>
+  <p style="color:#999">Paste a link, it downloads, transcribes, finds the best moments, cuts vertical clips, burns in captions, generates a thumbnail, and writes a post caption for each one.</p>
+
+  <input type="text" id="url" placeholder="https://www.youtube.com/watch?v=...">
+  <div class="row">
+    <div>
+      <label>Number of clips</label><br>
+      <input type="text" id="num_clips" value="5" style="width:80px">
+    </div>
+    <div>
+      <label>Clip length (sec)</label><br>
+      <input type="text" id="clip_len" value="45" style="width:80px">
+    </div>
+  </div>
+  <button id="startBtn" onclick="start()">Generate Clips</button>
+
+  <div id="log"></div>
+  <div id="results"></div>
+
+<script>
+async function start() {
+  const url = document.getElementById('url').value;
+  const num_clips = document.getElementById('num_clips').value;
+  const clip_len = document.getElementById('clip_len').value;
+  const btn = document.getElementById('startBtn');
+  const log = document.getElementById('log');
+  const results = document.getElementById('results');
+  results.innerHTML = '';
+  log.textContent = 'Starting...';
+  btn.disabled = true;
+
+  const startResp = await fetch('/api/start', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({url, num_clips, clip_len})
+  });
+  const startData = await startResp.json();
+  if (startData.error) {
+    log.textContent = 'Error: ' + startData.error;
+    btn.disabled = false;
+    return;
+  }
+  const jobId = startData.job_id;
+  poll(jobId, log, results, btn);
+}
+
+async function poll(jobId, log, results, btn) {
+  const resp = await fetch('/api/status/' + jobId);
+  const data = await resp.json();
+  log.textContent = data.log.join('\n');
+
+  if (data.status === 'done') {
+    btn.disabled = false;
+    results.innerHTML = '<h3>Clips</h3>' + data.results.map((r, i) => `
+      <div class="clip">
+        <img src="/downloads/${r.thumbnail}" alt="thumbnail">
+        <div class="info">
+          <b>${r.start.toFixed(1)}s - ${r.end.toFixed(1)}s</b> (score ${r.score})<br>
+          <i>${r.reason}</i><br>
+          <a class="dl" href="/downloads/${r.file}" download>⬇ Download clip</a>
+          &nbsp;|&nbsp;
+          <a class="dl" href="/downloads/${r.thumbnail}" download>⬇ Download thumbnail</a>
+          <textarea class="caption" id="cap${i}" rows="3" readonly>${r.caption}</textarea>
+          <button class="copyBtn" onclick="copyCaption('cap${i}')">Copy caption</button>
+        </div>
+      </div>
+    `).join('');
+    return;
+  }
+  if (data.status === 'error') {
+    btn.disabled = false;
+    log.textContent += '\n\nERROR:\n' + data.error;
+    return;
+  }
+  setTimeout(() => poll(jobId, log, results, btn), 1500);
+}
+
+function copyCaption(id) {
+  const el = document.getElementById(id);
+  el.select();
+  document.execCommand('copy');
+}
+</script>
+</body>
+</html>

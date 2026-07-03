@@ -1,0 +1,5 @@
+services:
+  - type: web
+    name: yt-clipper
+    env: docker
+    plan: free
